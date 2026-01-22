@@ -227,7 +227,58 @@ async function postLeadWebhook(url, payload) {
   } finally {
     clearTimeout(t);
   }
+}async function getDriveFileInfoSafe(drive, fileId) {
+  try {
+    const r = await drive.files.get({
+      fileId,
+      fields: 'id,name,webViewLink,mimeType',
+      supportsAllDrives: true
+    });
+    return r?.data || null;
+  } catch (e) {
+    console.error('Failed to fetch Drive metadata for', fileId, e?.message || e);
+    return null;
+  }
 }
+
+async function enrichSelectedPieces({ cfg, baseUrl, selectedTypeKey, selectedImageIds }) {
+  if (!Array.isArray(selectedImageIds) || selectedImageIds.length === 0) {
+    return { selectedPieces: [], selectedPiecesLinks: '', selectedPiecesNames: '', selectedPiecesSummary: '' };
+  }
+
+  const drive = getDriveClient(cfg);
+
+  const selectedPieces = [];
+  for (const id of selectedImageIds) {
+    const meta = await getDriveFileInfoSafe(drive, id);
+    selectedPieces.push({
+      id,
+      typeKey: selectedTypeKey,
+      typeLabel: typeLabel(selectedTypeKey),
+      name: meta?.name || '',
+      webViewLink: meta?.webViewLink || '',
+      mimeType: meta?.mimeType || '',
+      appImageUrl: `${baseUrl}/img/${id}`
+    });
+  }
+
+  const links = selectedPieces
+    .map((p) => p.webViewLink || p.appImageUrl)
+    .filter(Boolean)
+    .join('\n');
+
+  const names = selectedPieces
+    .map((p) => p.name || p.id)
+    .join('\n');
+
+  const summary = selectedPieces
+    .map((p) => `${p.typeLabel}: ${p.name || p.id} — ${p.webViewLink || p.appImageUrl}`)
+    .join('\n');
+
+  return { selectedPieces, selectedPiecesLinks: links, selectedPiecesNames: names, selectedPiecesSummary: summary };
+}
+
+
 
 app.post('/api/submit', async (req, res) => {
   try {
@@ -267,6 +318,21 @@ app.post('/api/submit', async (req, res) => {
       shopDomain: body.context?.shopDomain || '',
       userAgent: req.headers['user-agent'] || ''
     };
+
+
+    const baseUrl = `${req.protocol}://${req.get('host')}`;
+
+    const enriched = await enrichSelectedPieces({
+      cfg,
+      baseUrl,
+      selectedTypeKey: body.selectedTypeKey,
+      selectedImageIds: body.selectedImageIds
+    });
+
+    lead.selectedPieces = enriched.selectedPieces;
+    lead.selectedPiecesLinks = enriched.selectedPiecesLinks;
+    lead.selectedPiecesNames = enriched.selectedPiecesNames;
+    lead.selectedPiecesSummary = enriched.selectedPiecesSummary;
 
 const webhookUrl = process.env.LEAD_WEBHOOK_URL || '';
 let webhookDelivered = false;
