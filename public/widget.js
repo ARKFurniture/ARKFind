@@ -22,7 +22,9 @@ const state = {
     referrer: '',
     shopDomain: ''
   },
-  error: ''
+  error: '',
+  submitting: false,
+  leadId: null
 };
 
 function qs() {
@@ -63,7 +65,7 @@ function afterRender() {
 window.addEventListener('resize', () => postHeight());
 
 async function loadTypes() {
-  state.loading = true;
+  // state.loading is used for page loads; submitting has its own flag
   render();
 
   try {
@@ -74,14 +76,14 @@ async function loadTypes() {
     state.loading = false;
     state.error = '';
   } catch (e) {
-    state.loading = false;
+    state.submitting = false;
     state.error = e?.message || 'Failed to load furniture types.';
   }
   render();
 }
 
 async function loadTypeImages(typeKey) {
-  state.loading = true;
+  // state.loading is used for page loads; submitting has its own flag
   state.selectedImageIds.clear();
   state.noneSelected = false;
   state.noneDescription = '';
@@ -95,7 +97,7 @@ async function loadTypeImages(typeKey) {
     state.loading = false;
     state.error = '';
   } catch (e) {
-    state.loading = false;
+    state.submitting = false;
     state.error = e?.message || 'Failed to load images.';
   }
   render();
@@ -155,7 +157,7 @@ function continueToForm() {
 }
 
 async function submitLead() {
-  state.loading = true;
+  state.submitting = true;
   state.error = '';
   render();
 
@@ -178,11 +180,11 @@ async function submitLead() {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Submit failed');
 
-    state.loading = false;
+    state.submitting = false;
     state.step = 4;
     state.leadId = data.leadId;
   } catch (e) {
-    state.loading = false;
+    state.submitting = false;
     state.error = e?.message || 'Submit failed.';
   }
 
@@ -272,7 +274,9 @@ function imageGrid() {
     <div class="card">
       <div class="grid">${tiles}${noneTile}</div>
       ${descBox}
-      <div class="controls">
+      ${state.submitting ? `<div class="helper" style="margin:0 0 10px; color: var(--muted);">Sending your request…</div>` : ``}
+
+        <div class="controls">
         <button class="btn" data-back="1">Back</button>
         <div style="display:flex; gap:10px; align-items:center;">
           ${showMoreBtn}
@@ -326,9 +330,11 @@ function contactForm() {
           <input id="website" name="website" tabindex="-1" />
         </div>
 
+        ${state.submitting ? `<div class="helper" style="margin:0 0 10px; color: var(--muted);">Sending your request…</div>` : ``}
+
         <div class="controls">
           <button class="btn" type="button" data-back="1">Back</button>
-          <button class="btn primary" type="submit">Send me pieces</button>
+          <button class="btn primary" id="ark-submit" type="submit" ${state.submitting ? "disabled" : ""}>${state.submitting ? "Sending…" : "Send me pieces"}</button>
         </div>
       </form>
     </div>
@@ -370,7 +376,7 @@ function render() {
 
   html += errorBanner();
 
-  if (state.loading && state.step !== 3) {
+  if (state.loading) {
     html += loadingScreen();
   } else {
     if (state.step === 1) html += typeGrid();
@@ -433,6 +439,7 @@ function render() {
       form.website.value = state.contact.website;
 
       form.addEventListener('submit', (e) => {
+        if (state.submitting) return;
         e.preventDefault();
         state.contact.name = form.name.value;
         state.contact.email = form.email.value;
