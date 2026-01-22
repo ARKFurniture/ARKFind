@@ -132,6 +132,7 @@ app.get('/img/:id', async (req, res) => {
       const meta = await getFileMetadata({ drive, fileId });
       const stream = await getFileStream({ drive, fileId });
       res.setHeader('content-type', meta?.mimeType || 'application/octet-stream');
+      res.setHeader('Content-Disposition', 'inline');
       res.setHeader('cache-control', 'public, max-age=604800');
       stream.on('error', (err) => {
         console.error('Drive stream error:', err);
@@ -208,6 +209,26 @@ const LeadSchema = z.object({
   }).default({})
 });
 
+
+async function postLeadWebhook(url, payload) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), 8000);
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    });
+    if (!r.ok) {
+      const text = await r.text().catch(() => '');
+      throw new Error(`Webhook failed: ${r.status} ${text?.slice(0, 200) || ''}`.trim());
+    }
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 app.post('/api/submit', async (req, res) => {
   try {
     const parsed = LeadSchema.safeParse(req.body);
@@ -247,9 +268,24 @@ app.post('/api/submit', async (req, res) => {
       userAgent: req.headers['user-agent'] || ''
     };
 
-    await deliverLead(cfg, lead);
+const webhookUrl = process.env.LEAD_WEBHOOK_URL || '';
+let webhookDelivered = false;
 
-    res.json({ ok: true, leadId: lead.id });
+if (webhookUrl) {
+  await postLeadWebhook(webhookUrl, lead);
+  webhookDelivered = true;
+}
+
+try {
+  await deliverLead(cfg, lead);
+} catch (err) {
+  // If a webhook delivered the lead, don't fail the user flow.
+  if (!webhookDelivered) throw err;
+  console.error('Email delivery failed (webhook already delivered):', err);
+}
+
+res.json({ ok: true, leadId: lead.id });
+
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: 'Submit failed' });
