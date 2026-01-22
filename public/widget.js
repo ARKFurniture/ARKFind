@@ -1,5 +1,22 @@
 const app = document.getElementById('app');
 
+let __lastRenderedStep = null;
+
+function scrollToTopOfWidget() {
+  // In standalone mode, this scrolls the widget page to the top of the app container.
+  try {
+    const top = app.getBoundingClientRect().top + window.scrollY;
+    window.scrollTo({ top: Math.max(0, top - 12), behavior: 'smooth' });
+  } catch (_) {}
+
+  // In embedded iframe mode, ask the parent page to scroll the iframe into view.
+  try {
+    if (window.parent && window.parent !== window) {
+      window.parent.postMessage({ type: 'ARK_FIND_SCROLL_TOP' }, '*');
+    }
+  } catch (_) {}
+}
+
 const state = {
   step: 1,
   loading: true,
@@ -453,6 +470,10 @@ function render() {
   }
 
   afterRender();
+
+  const __stepChanged = (__lastRenderedStep !== null && __lastRenderedStep !== state.step);
+  __lastRenderedStep = state.step;
+  if (__stepChanged) scrollToTopOfWidget();
 }
 
 // Init context (Shopify page URL etc.)
