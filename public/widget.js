@@ -200,6 +200,24 @@ async function submitLead() {
     state.submitting = false;
     state.step = 4;
     state.leadId = data.leadId;
+
+    // ✅ NEW: notify parent (Shopify page) that submit succeeded
+    try {
+      if (window.parent && window.parent !== window) {
+        // Prefer sending to the exact parent origin, but allow fallback
+        window.parent.postMessage(
+          { type: 'ARK_FIND_SUBMITTED', leadId: state.leadId },
+          'https://www.arkfurniture.ca'
+        );
+      }
+    } catch (_) {}
+
+    // ✅ OPTIONAL fallback: if embedded somewhere without the listener,
+    // still attempt to navigate the top page (you said top-nav works)
+    try {
+      window.top.location.href = 'https://www.arkfurniture.ca/pages/ark-find-thank-you';
+    } catch (_) {}
+
   } catch (e) {
     state.submitting = false;
     state.error = e?.message || 'Submit failed.';
